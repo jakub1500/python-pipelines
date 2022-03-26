@@ -1,0 +1,72 @@
+#!/usr/bin/python3
+
+from kubernetes import client, config
+from pods.pod import Pod #Busybox, PythonPipelines
+from utils import common
+from utils.environment import env
+from utils.logger import Logger
+import argparse
+import os
+
+
+def setup_env() -> None:
+    env["kubernetes"] = {}
+    env["kubernetes"]["api"] = client.CoreV1Api()
+    env["kubernetes"]["pods"] = []
+    env["kubernetes"]["default_namespace"] = "test"
+    env["general"] = {}
+    env["general"]["script_dir"] = os.path.dirname(os.path.realpath(__file__))
+    env["general"]["main_binary"] = "pipelines"
+    env["general"]["relocation_path"] = "/opt/pipelines"
+    env["general"]["relocated_env"] = \
+        env["general"]["script_dir"] == env["general"]["relocation_path"]
+
+
+def prepare_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-l", "--local-run",  action="store_true", dest="local_run",
+                        help="Flag with info that we are running in relocated environment")
+    parser.add_argument("--no-relocate",  action="store_true", dest="no_relocate",
+                        help="Disable relocation while local-run")
+    parser.add_argument("-v", "--verbose", action="store_true", dest="verbose",
+                        help="increase output verbosity")
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = prepare_args()
+
+    common.print_banner()
+
+    if args.local_run:
+        config.load_kube_config()
+    else:
+        config.load_incluster_config()
+
+    setup_env()  # setup env must happen after proper config load
+
+    if args.local_run and not args.no_relocate:
+        print("""
+Running in local environment.
+Current pipelines script will be soon relocated to cluster
+from within this script will continue.
+Keep in mind this mode is inteded to run in development environment.
+------------------------------------------------------------------->\n""", flush=True)
+        with Pod("pipelines") as pythonPipelines:
+            Logger.info("Pipelines pod spawned properly.")
+            Logger.info("Relocating pipelines files into spawned pod.")
+            pythonPipelines.copy_directory(f'{env["general"]["script_dir"]}', env["general"]["relocation_path"])
+            Logger.info("Setting up the requirements for the pipelines.")
+            pythonPipelines.exec(f'cd {env["general"]["relocation_path"]} && pip3 install -r requirements.txt', silent=True)
+            Logger.info("Requirements satisfied, let the fun begin!")
+            Logger.info("Jumping into relocated pipelines...")
+            pythonPipelines.exec(f'cd {env["general"]["relocation_path"]} && python3 {env["general"]["main_binary"]}')
+
+        exit(0)
+
+    if args.no_relocate:
+        print("Running in local environment without relocation")
+
+    
+    with Pod("busybox") as busybox:
+        busybox.exec("echo dupa; sleep 5; echo -n 'kupa\nkutas'; sleep 2; echo maciora", useLegacyShell=True)
