@@ -8,7 +8,18 @@ logger.setLevel(logging.INFO)
 class Logger:
 
     @classmethod
+    def mask_secret_text(cls, text):
+        if "general" in env and "secrets" in env["general"] and len(env["general"]["secrets"]) != 0:
+            length = len(text)
+            masked_text = "*"*length
+            print("Warning! Passed unmasked secret to Logger! Auto-masking it!")
+            return masked_text
+        return text
+
+
+    @classmethod
     def debug(cls, text):
+        text = cls.mask_secret_text(text)
         if env["general"]["relocated_env"]:
             print(text, flush=True)
         else:
@@ -16,6 +27,7 @@ class Logger:
 
     @classmethod
     def info(cls, text):
+        text = cls.mask_secret_text(text)
         if env["general"]["relocated_env"]:
             print(text, flush=True)
         else:
@@ -23,6 +35,7 @@ class Logger:
 
     @classmethod
     def warning(cls, text):
+        text = cls.mask_secret_text(text)
         if env["general"]["relocated_env"]:
             print(text, flush=True)
         else:
@@ -30,6 +43,7 @@ class Logger:
 
     @classmethod
     def error(cls, text):
+        text = cls.mask_secret_text(text)
         if env["general"]["relocated_env"]:
             print(text, flush=True)
         else:

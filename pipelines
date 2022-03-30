@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 from kubernetes import client, config
-from pods.pod import Pod #Busybox, PythonPipelines
+from k8s.pod import Pod #Busybox, PythonPipelines
 from utils import common
 from utils.environment import env
 from utils.logger import Logger
@@ -20,6 +20,7 @@ def setup_env() -> None:
     env["general"]["relocation_path"] = "/opt/pipelines"
     env["general"]["relocated_env"] = \
         env["general"]["script_dir"] == env["general"]["relocation_path"]
+    env["general"]["secrets"] = []
 
 
 def prepare_args():
@@ -68,5 +69,9 @@ Keep in mind this mode is inteded to run in development environment.
         print("Running in local environment without relocation")
 
     
+    # busybox = Pod("busybox")
+    # busybox.spawn()
+    # busybox.copy_file_from('/etc/resolv.conf', '/tmp/xd')
     with Pod("busybox") as busybox:
-        busybox.exec("echo dupa; sleep 5; echo -n 'kupa\nkutas'; sleep 2; echo maciora", useLegacyShell=True)
+        # busybox.exec("echo dupa; sleep 5; echo -n 'kupa\nkutas'; sleep 2; echo maciora", useLegacyShell=True)
+        busybox.copy_file_from('/etc/', '/tmp/xd')

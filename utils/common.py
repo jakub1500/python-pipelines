@@ -1,4 +1,6 @@
 import random
+import subprocess
+import base64
 
 def print_banner() -> None:
     print("""
@@ -10,7 +12,7 @@ def print_banner() -> None:
 |_|    |___/                        |_|     |_|                            
     """, flush=True)
 
-def generate_random_string(length):    
+def generate_random_string(length: int) -> str:
     random_string = ''
     
     for _ in range(length):
@@ -25,3 +27,13 @@ def generate_random_string(length):
         random_string += (chr(random_integer))
     
     return random_string
+
+def encode_str_to_base64(string: str) -> str:
+    return base64.b64encode(bytes(string, 'utf-8')).decode("utf-8")
+
+def decode_base64_to_str(base64_content: bytes) -> str:
+    return base64.b64decode(base64_content).decode("utf-8")
+
+def exec(command: str):
+        result = subprocess.run(command.split(), stdout=subprocess.PIPE)
+        return (result.stdout.decode('utf8'), result.returncode)

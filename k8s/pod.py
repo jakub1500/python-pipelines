@@ -8,6 +8,8 @@ import os
 import base64
 import json
 import yaml
+import tarfile
+import io
 
 pod_templates = None
 with open(f"{os.path.dirname(os.path.realpath(__file__))}/pod_config.yaml", 'r') as config:
@@ -86,6 +88,7 @@ class Pod:
 
     def delete(self):
         self.api_instance.delete_namespaced_pod(self.name, self.namespace)
+        env["kubernetes"]["pods"].remove(self.name)
         Logger.info(f"{self.name} deleted")
 
     def exec(self, command, silent=False, useLegacyShell=False) -> int:
@@ -99,6 +102,7 @@ class Pod:
                     stdout=True, tty=False, _preload_content=False)
  
         while resp.is_open():
+            resp.update(timeout=1)
             if resp.peek_stdout() and not silent:
                 content = resp.read_stdout()
                 Logger.info(content.strip())
@@ -106,7 +110,12 @@ class Pod:
                 content = resp.read_stderr()
                 Logger.info(content.strip())
 
-        return self._get_error_code_from_stream_response(resp)
+        # error_code = self._get_error_code_from_stream_response(resp)
+        resp.close()
+        return resp.returncode
+        import time
+        time.sleep(2)
+        return error_code
 
     def copy_file(self, source, destination):
         exec_command = ["sh"]
@@ -136,6 +145,29 @@ class Pod:
         self.exec(f"base64 -d {destination}.base64 > {destination}")
         self.exec(f"rm -f {destination}.base64")
 
+    def copy_file_from(self, source, destination):
+        """
+        This method provides an interface to copy file or whole dirs from pod
+        to host filesystem (typically where pipelines script is running).
+        `destination` parameter points to directory where the copied files
+        will be written, so if we want to copy /etc directory from pod to
+        local path /tmp/localpath the destination paramter needs to contain that path.
+        """
+        temp_file = "/tmp/copy-content.tar.gz"
+        self.exec(f'cd $(dirname {source}) && tar -czvf {temp_file} $(basename {source})', silent=True, useLegacyShell=True)
+
+        resp = stream(self.api_instance.connect_get_namespaced_pod_exec,
+                    self.name,
+                    self.namespace,
+                    command=["sh", "-c" ,f"base64 {temp_file}"],
+                    stderr=True, stdin=False,
+                    stdout=True, tty=False)
+        tar_content = base64.b64decode(resp)
+        io_bytes = io.BytesIO(tar_content)
+        tar = tarfile.open(fileobj=io_bytes, mode='r')
+        tar.extractall(path=destination)
+        self.exec(f'rm {temp_file}', silent=True, useLegacyShell=True)
+ 
     def copy_directory(self, source, destination):
         def _copy_directory(source, destination):
             for name in os.listdir(source):
@@ -147,6 +179,16 @@ class Pod:
         
         self.exec(f"mkdir -p {destination}")
         _copy_directory(source, destination)
+
+    def check_is_file(self, path):
+        return self.exec(f"test -f {path}", silent=True, useLegacyShell=True) == 0
+
+    def check_exists(self, path):
+        return self.exec(f"test -e {path}", silent=True, useLegacyShell=True) == 0
+
+    def check_is_dir(self, path):
+        return self.exec(f"test -d {path}", silent=True, useLegacyShell=True) == 0
+
 
     def print_pod_details(self):
         resources_details = ""
