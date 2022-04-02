@@ -9,4 +9,11 @@ busybox:
       cpu: "500m"
 
 pipelines:
-  image: registry.jw.to/ubuntu:latest
+  image: python:3.9.12
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "250m"
+    limits:
+      memory: "128Mi"
+      cpu: "500m"

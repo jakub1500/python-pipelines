@@ -12,7 +12,8 @@ class GenericTest(unittest.TestCase):
         env["kubernetes"] = {}
         env["kubernetes"]["api"] = client.CoreV1Api()
         env["kubernetes"]["pods"] = []
-        env["kubernetes"]["default_namespace"] = "test"
+        env["kubernetes"]["default_namespace"] = "python-pipelines-test"
+        env["kubernetes"]["default_serviceaccount"] = "python-pipelines"
         env["general"] = {}
         env["general"]["relocated_env"] = False
         env["general"]["secrets"] = []

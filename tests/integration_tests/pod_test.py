@@ -51,7 +51,7 @@ class PodTests(GenericTest):
             timeout = timeout - 1
             try:
                 self.get_status_of_pod(spawned_pod_name)
-                time.sleep(1)
+                time.sleep(0.3)
                 continue
             except ApiException as e:
                 if e.reason == "Not Found":

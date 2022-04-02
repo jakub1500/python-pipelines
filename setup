@@ -1,0 +1,27 @@
+#!/bin/bash
+
+SETUP=1
+ACTION="Setting"
+SCRIPT_DIR=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+ADDITIONAL_SOURCE="${SCRIPT_DIR}/additional_source"
+RBAC_PERMISSIONS_YAML="${ADDITIONAL_SOURCE}/rbac-permissions.yaml"
+RBAC_PERMISSIONS_TEST_YAML="${ADDITIONAL_SOURCE}/rbac-permissions-test.yaml"
+
+if ! which kubectl >/dev/null 2>&1 ; then
+    echo "kubectl is neede by this script. Install it first."
+    exit 1
+fi
+
+if [[ $1 == "--clean" ]]; then
+    SETUP=0
+    ACTION="Cleaning"
+fi
+
+echo "Performing ${ACTION}"
+if [[ $SETUP -eq 1 ]]; then
+    kubectl apply -f ${RBAC_PERMISSIONS_YAML}
+    kubectl apply -f ${RBAC_PERMISSIONS_TEST_YAML}
+else
+    kubectl delete -f ${RBAC_PERMISSIONS_YAML}
+    kubectl delete -f ${RBAC_PERMISSIONS_TEST_YAML}
+fi

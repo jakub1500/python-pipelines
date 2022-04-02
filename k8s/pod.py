@@ -35,11 +35,12 @@ class Pod:
         self.image: str = pod_details["image"]
         self.name: str = f'{pod_template_name}-{generate_random_string(10)}'
         self.namespace = pod_details["namespace"]
+        self.serviceaccount = env["kubernetes"]["default_serviceaccount"]
         self.restart_policy: str = pod_details["restart_policy"]
         self.image_pull_policy: str = pod_details["image_pull_policy"]
         self.resources = pod_details["resources"] if "resources" in pod_details else None
         self.pod_timeout: int = pod_timeout
-        self.api_instance : client.CoreV1Api = env["kubernetes"]["api"]
+        self.api_instance: client.CoreV1Api = env["kubernetes"]["api"]
         self._prepare_kubernetes_pod()
 
     def __enter__(self):
@@ -58,7 +59,7 @@ class Pod:
         else:
             container = client.V1Container(name=self.name, image=self.image, image_pull_policy=self.image_pull_policy)
         container.args = ["sleep", f"{self.pod_timeout}"]
-        spec = client.V1PodSpec(containers=[container], restart_policy=self.restart_policy)
+        spec = client.V1PodSpec(containers=[container], restart_policy=self.restart_policy, service_account_name=self.serviceaccount)
         self.pod.spec = spec
 
     @property

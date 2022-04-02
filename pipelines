@@ -8,12 +8,12 @@ from utils.logger import Logger
 import argparse
 import os
 
-
 def setup_env() -> None:
     env["kubernetes"] = {}
     env["kubernetes"]["api"] = client.CoreV1Api()
     env["kubernetes"]["pods"] = []
-    env["kubernetes"]["default_namespace"] = "test"
+    env["kubernetes"]["default_namespace"] = "python-pipelines"
+    env["kubernetes"]["default_serviceaccount"] = "python-pipelines"
     env["general"] = {}
     env["general"]["script_dir"] = os.path.dirname(os.path.realpath(__file__))
     env["general"]["main_binary"] = "pipelines"
@@ -22,11 +22,14 @@ def setup_env() -> None:
         env["general"]["script_dir"] == env["general"]["relocation_path"]
     env["general"]["secrets"] = []
 
+def is_local_run() -> bool:
+    return 'KUBERNETES_SERVICE_HOST' not in os.environ
+
 
 def prepare_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-l", "--local-run",  action="store_true", dest="local_run",
-                        help="Flag with info that we are running in relocated environment")
+    # parser.add_argument("-l", "--local-run",  action="store_true", dest="local_run",
+    #                     help="Flag with info that we are running in relocated environment")
     parser.add_argument("--no-relocate",  action="store_true", dest="no_relocate",
                         help="Disable relocation while local-run")
     parser.add_argument("-v", "--verbose", action="store_true", dest="verbose",
@@ -39,14 +42,14 @@ if __name__ == "__main__":
 
     common.print_banner()
 
-    if args.local_run:
+    if is_local_run():
         config.load_kube_config()
     else:
         config.load_incluster_config()
 
     setup_env()  # setup env must happen after proper config load
 
-    if args.local_run and not args.no_relocate:
+    if is_local_run() and not args.no_relocate:
         print("""
 Running in local environment.
 Current pipelines script will be soon relocated to cluster
