@@ -6,7 +6,6 @@ from utils.logger import Logger
 from utils.environment import env
 import os
 import base64
-import json
 import yaml
 import tarfile
 import io
@@ -14,10 +13,10 @@ import tempfile
 
 pod_templates = None
 with open(f"{os.path.dirname(os.path.realpath(__file__))}/pod_config.yaml", 'r') as config:
-    pod_templates=yaml.safe_load(config)
+    pod_templates = yaml.safe_load(config)
 
-def get_pod_details(pod_template_name):
-    pod_details = pod_templates[pod_template_name]
+def get_pod_details(pod_template_name: str):
+    pod_details: dict = pod_templates[pod_template_name]
     if "restart_policy" not in pod_details:
         pod_details["restart_policy"] = "Never"
     if "image_pull_policy" not in pod_details:
@@ -27,21 +26,22 @@ def get_pod_details(pod_template_name):
     return pod_details
 
 class Pod:
-    labels = {
+    labels: dict = {
         "python-pipelines": "True"
     }
 
-    def __init__(self, pod_template_name, name=None, pod_timeout=3600):
+    def __init__(self, pod_template_name: str, name: str = None, pod_timeout: int = 3600):
         pod_details = get_pod_details(pod_template_name)
         self.image: str = pod_details["image"]
         self.name: str = f'{pod_template_name}-{generate_random_string(10)}'
-        self.namespace = pod_details["namespace"]
-        self.serviceaccount = env["kubernetes"]["default_serviceaccount"]
+        self.namespace: str = pod_details["namespace"]
+        self.serviceaccount: str = env["kubernetes"]["default_serviceaccount"]
         self.restart_policy: str = pod_details["restart_policy"]
         self.image_pull_policy: str = pod_details["image_pull_policy"]
-        self.resources = pod_details["resources"] if "resources" in pod_details else None
+        self.resources: dict = pod_details["resources"] if "resources" in pod_details else {}
         self.pod_timeout: int = pod_timeout
         self.api_instance: client.CoreV1Api = env["kubernetes"]["api"]
+        self._pod: client.V1Pod = client.V1Pod()
         self._prepare_kubernetes_pod()
 
     def __enter__(self):
@@ -51,9 +51,8 @@ class Pod:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.delete()
 
-    def _prepare_kubernetes_pod(self):
-        self.pod = client.V1Pod()
-        self.pod.metadata = client.V1ObjectMeta(name=self.name, labels=self.labels)
+    def _prepare_kubernetes_pod(self) -> None:
+        self._pod.metadata = client.V1ObjectMeta(name=self.name, labels=self.labels)
         if self.resources:
             resource_requirements: client.V1ResourceRequirements = client.V1ResourceRequirements(limits=self.resources["limits"], requests=self.resources["requests"])
             container = client.V1Container(name=self.name, image=self.image, image_pull_policy=self.image_pull_policy, resources=resource_requirements)
@@ -61,7 +60,7 @@ class Pod:
             container = client.V1Container(name=self.name, image=self.image, image_pull_policy=self.image_pull_policy)
         container.args = ["sleep", f"{self.pod_timeout}"]
         spec = client.V1PodSpec(containers=[container], restart_policy=self.restart_policy, service_account_name=self.serviceaccount)
-        self.pod.spec = spec
+        self._pod.spec = spec
 
     @property
     def is_running(self):
@@ -80,7 +79,7 @@ class Pod:
             time.sleep(0.5)
 
     def spawn(self):
-        self.api_instance.create_namespaced_pod(namespace=self.namespace, body=self.pod, async_req=False)
+        self.api_instance.create_namespaced_pod(namespace=self.namespace, body=self._pod, async_req=False)
         env["kubernetes"]["pods"].append(self.name)
         self.wait_for_running_status()
 
@@ -93,7 +92,7 @@ class Pod:
         env["kubernetes"]["pods"].remove(self.name)
         Logger.info(f"{self.name} deleted")
 
-    def exec(self, command, silent=False, useLegacyShell=False, maxOutputCharacters: int=10000) -> dict:
+    def exec(self, command: str, silent: bool = False, useLegacyShell: bool = False, maxOutputCharacters: int = 10000) -> dict:
         def _append_output(content):
             nonlocal output
             nonlocal lock_output_buffer
@@ -103,8 +102,8 @@ class Pod:
                 output = output + content
 
         self.wait_for_running_status()
-        lock_output_buffer = False
-        output = ""
+        lock_output_buffer: bool = False
+        output: str = ""
         final_command = ["sh" if useLegacyShell else "bash", "-c", command]
         resp: WSClient = stream(self.api_instance.connect_get_namespaced_pod_exec,
                     self.name,
@@ -137,10 +136,10 @@ class Pod:
         will be written, so if we want to copy /etc directory from pod to
         local path /tmp/localpath the destination paramter needs to contain that path.
         """
-        temp_file = "/tmp/copy-content.tar.gz"
+        temp_file: str = self.create_temp_file()
         self.exec(f'cd $(dirname {source}) && tar -czvf {temp_file} $(basename {source})', silent=True, useLegacyShell=True)
 
-        resp = stream(self.api_instance.connect_get_namespaced_pod_exec,
+        resp: WSClient = stream(self.api_instance.connect_get_namespaced_pod_exec,
                     self.name,
                     self.namespace,
                     command=["sh", "-c" ,f"base64 {temp_file}"],
@@ -150,26 +149,26 @@ class Pod:
         io_bytes = io.BytesIO(tar_content)
         tar = tarfile.open(fileobj=io_bytes, mode='r')
         tar.extractall(path=destination)
+        tar.close()
         self.exec(f'rm {temp_file}', silent=True, useLegacyShell=True)
 
     def copy_file_to(self, source: str, destination: str) -> None:
-        
-        temp_file = "/tmp/copy-content.tar.gz"
-        with tarfile.open(temp_file, mode='w:gz') as tar:
+        in_memory_tar = io.BytesIO()
+        with tarfile.open(fileobj=in_memory_tar, mode='w:gz') as tar:
             tar.add(source, arcname=os.path.basename(source))
-        tar.close()
 
-        resp = stream(self.api_instance.connect_get_namespaced_pod_exec, self.name, self.namespace,
+        temp_file: str = self.create_temp_file()
+
+        resp: WSClient = stream(self.api_instance.connect_get_namespaced_pod_exec, self.name, self.namespace,
                     command=["sh"],
                     stderr=True, stdin=True,
                     stdout=True, tty=False,
                     _preload_content=False)
 
-        with open(temp_file, "rb") as file:
-            commands = []
-            commands.append("cat <<'EOF' >" + f'tempfile.base64' + "\n")
-            commands.append(base64.b64encode(file.read()) + b'\n')
-            commands.append("EOF\n")
+        commands = []
+        commands.append(f"cat <<'EOF' > {temp_file}\n")
+        commands.append(base64.b64encode(in_memory_tar.getvalue()) + b'\n')
+        commands.append("EOF\n")
 
         while resp.is_open():
             resp.update(timeout=1)
@@ -178,25 +177,13 @@ class Pod:
                 resp.write_stdin(c)
             else:
                 break
-
         resp.close()
 
-        self.exec(f"base64 -d tempfile.base64 > /tmp/tempfile.tar.gz", silent=True, useLegacyShell=True)
-        if not self.check_exists(destination):
-            self.exec(f"mkdir -p {destination}", silent=True, useLegacyShell=True)
-        self.exec(f"tar -xf /tmp/tempfile.tar.gz --directory {destination}", useLegacyShell=True)
-        self.exec(f"rm -f tempfile.base64 tmp/tempfile.tar.gz", silent=True, useLegacyShell=True)
+        self.exec(f"mkdir -p {destination}", silent=True, useLegacyShell=True)
+        self.exec(f"base64 -d {temp_file} | tar zxf - --directory {destination}", silent=True, useLegacyShell=True)
+        self.exec(f"rm -f {temp_file}", silent=True, useLegacyShell=True)
 
-    def check_is_file(self, path):
-        return self.exec(f"test -f {path}", silent=True, useLegacyShell=True)["ret_val"] == 0
-
-    def check_exists(self, path):
-        return self.exec(f"test -e {path}", silent=True, useLegacyShell=True)["ret_val"] == 0
-
-    def check_is_dir(self, path):
-        return self.exec(f"test -d {path}", silent=True, useLegacyShell=True)["ret_val"] == 0
-
-    def print_pod_details(self):
+    def print_pod_details(self) -> None:
         resources_details = ""
         if self.resources:
             resources_details = f"  resources:\n" + \
@@ -210,3 +197,15 @@ class Pod:
                     f"  image: {self.image}\n" +
                     f"  namespace: {self.namespace}\n" +
                     f"{'' if not resources_details else resources_details}")
+
+    def check_is_file(self, path: str) -> None:
+        return self.exec(f"test -f {path}", silent=True, useLegacyShell=True)["ret_val"] == 0
+
+    def check_exists(self, path: str) -> None:
+        return self.exec(f"test -e {path}", silent=True, useLegacyShell=True)["ret_val"] == 0
+
+    def check_is_dir(self, path: str) -> None:
+        return self.exec(f"test -d {path}", silent=True, useLegacyShell=True)["ret_val"] == 0
+
+    def create_temp_file(self) -> str:
+        return self.exec("mktemp", silent=True, useLegacyShell=True)["output"]

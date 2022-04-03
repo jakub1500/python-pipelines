@@ -113,7 +113,7 @@ class PodTests(GenericTest):
         with Pod("busybox") as pod:
             test_content = "somecontent"
             test_file_name = "somefile"
-            destination_dir = "/opt"
+            destination_dir = "/optopt"
             with tempfile.TemporaryDirectory() as tmpdirname:
                 with open(f'{tmpdirname}/{test_file_name}', "wb") as f:
                     f.write(bytes(test_content, 'utf-8'))
