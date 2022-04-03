@@ -2,7 +2,15 @@
 
 set -euo pipefail
 
+if ! which pip3 >/dev/null 2>&1 ; then
+    echo "pip3 is neede by this script. Install it first."
+    exit 1
+fi
+
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+PIP3_TEST_REQUIREMENTS=${SCRIPT_DIR}/requirements-test.txt
+
+pip3 install -r ${PIP3_TEST_REQUIREMENTS} > /dev/null
 
 integration_tests_path="${SCRIPT_DIR}/tests/integration_tests"
 unit_tests_path="${SCRIPT_DIR}/tests/unit_tests"
@@ -19,9 +27,12 @@ echo "
 echo "==================================================================================================="
 echo "Running unit-tests"
 unit_tests=$(find ${unit_tests_path} -name *test.py)
-python -m unittest ${unit_tests}
+coverage run -m unittest ${unit_tests}
+# coverage report fails on this as there aren't any results, keep commented out until unittests will be added
+# coverage report -m --omit=*tests*
 
 echo "==================================================================================================="
 echo "Running integration-tests"
 integration_tests=$(find ${integration_tests_path} -name *test.py)
-python -m unittest ${integration_tests}
+coverage run -m unittest ${integration_tests}
+coverage report -m --omit=*tests*

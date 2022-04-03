@@ -1,0 +1,2 @@
+kubernetes==23.3.0
+coverage==6.3.2

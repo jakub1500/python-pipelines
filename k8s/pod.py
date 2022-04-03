@@ -117,15 +117,11 @@ class Pod:
             resp.update(timeout=1)
             if resp.peek_stdout():
                 content = resp.read_stdout()
-                if not content:
-                    continue
                 if not silent:
                     Logger.info(content.strip())
                 _append_output(content.strip())
             if resp.peek_stderr():
                 content = resp.read_stderr()
-                if not content:
-                    continue
                 if not silent:
                     Logger.info(content.strip())
                 _append_output(content.strip())
