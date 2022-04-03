@@ -1,6 +1,6 @@
 from kubernetes import client
 from kubernetes.stream import stream
-from kubernetes.stream.ws_client import ERROR_CHANNEL
+from kubernetes.stream.ws_client import WSClient
 from utils.common import generate_random_string
 from utils.logger import Logger
 from utils.environment import env
@@ -10,6 +10,7 @@ import json
 import yaml
 import tarfile
 import io
+import tempfile
 
 pod_templates = None
 with open(f"{os.path.dirname(os.path.realpath(__file__))}/pod_config.yaml", 'r') as config:
@@ -92,61 +93,47 @@ class Pod:
         env["kubernetes"]["pods"].remove(self.name)
         Logger.info(f"{self.name} deleted")
 
-    def exec(self, command, silent=False, useLegacyShell=False) -> int:
+    def exec(self, command, silent=False, useLegacyShell=False, maxOutputCharacters: int=10000) -> dict:
+        def _append_output(content):
+            nonlocal output
+            nonlocal lock_output_buffer
+            if len(output) + len(content) > maxOutputCharacters:
+                lock_output_buffer = True
+            if not lock_output_buffer:
+                output = output + content
+
         self.wait_for_running_status()
+        lock_output_buffer = False
+        output = ""
         final_command = ["sh" if useLegacyShell else "bash", "-c", command]
-        resp = stream(self.api_instance.connect_get_namespaced_pod_exec,
+        resp: WSClient = stream(self.api_instance.connect_get_namespaced_pod_exec,
                     self.name,
                     self.namespace,
                     command=final_command,
                     stderr=True, stdin=False,
                     stdout=True, tty=False, _preload_content=False)
- 
+
         while resp.is_open():
             resp.update(timeout=1)
-            if resp.peek_stdout() and not silent:
+            if resp.peek_stdout():
                 content = resp.read_stdout()
-                Logger.info(content.strip())
+                if not content:
+                    continue
+                if not silent:
+                    Logger.info(content.strip())
+                _append_output(content.strip())
             if resp.peek_stderr():
                 content = resp.read_stderr()
-                Logger.info(content.strip())
-
-        # error_code = self._get_error_code_from_stream_response(resp)
-        resp.close()
-        return resp.returncode
-        import time
-        time.sleep(2)
-        return error_code
-
-    def copy_file(self, source, destination):
-        exec_command = ["sh"]
-        resp = stream(self.api_instance.connect_get_namespaced_pod_exec, self.name, self.namespace,
-                    command=exec_command,
-                    stderr=True, stdin=True,
-                    stdout=True, tty=False,
-                    _preload_content=False)
-
-        file = open(source, "rb")
-
-        commands = []
-        commands.append("cat <<'EOF' >" + f'{destination}.base64' + "\n")
-        commands.append(base64.b64encode(file.read()) + b'\n')
-        commands.append("EOF\n")
-
-        while resp.is_open():
-            resp.update(timeout=1)
-            if commands:
-                c = commands.pop(0)
-                resp.write_stdin(c)
-            else:
-                break
+                if not content:
+                    continue
+                if not silent:
+                    Logger.info(content.strip())
+                _append_output(content.strip())
 
         resp.close()
+        return {"ret_val": resp.returncode, "output": output}
 
-        self.exec(f"base64 -d {destination}.base64 > {destination}")
-        self.exec(f"rm -f {destination}.base64")
-
-    def copy_file_from(self, source, destination):
+    def copy_file_from(self, source: str, destination: str) -> None:
         """
         This method provides an interface to copy file or whole dirs from pod
         to host filesystem (typically where pipelines script is running).
@@ -168,28 +155,50 @@ class Pod:
         tar = tarfile.open(fileobj=io_bytes, mode='r')
         tar.extractall(path=destination)
         self.exec(f'rm {temp_file}', silent=True, useLegacyShell=True)
- 
-    def copy_directory(self, source, destination):
-        def _copy_directory(source, destination):
-            for name in os.listdir(source):
-                if os.path.isfile(f'{source}/{name}'):
-                    self.copy_file(f"{source}/{name}", f"{destination}/{name}")
-                else:
-                    self.exec(f"mkdir -p {destination}/{name}")
-                    _copy_directory(f"{source}/{name}", f"{destination}/{name}")
+
+    def copy_file_to(self, source: str, destination: str) -> None:
         
-        self.exec(f"mkdir -p {destination}")
-        _copy_directory(source, destination)
+        temp_file = "/tmp/copy-content.tar.gz"
+        with tarfile.open(temp_file, mode='w:gz') as tar:
+            tar.add(source, arcname=os.path.basename(source))
+        tar.close()
+
+        resp = stream(self.api_instance.connect_get_namespaced_pod_exec, self.name, self.namespace,
+                    command=["sh"],
+                    stderr=True, stdin=True,
+                    stdout=True, tty=False,
+                    _preload_content=False)
+
+        with open(temp_file, "rb") as file:
+            commands = []
+            commands.append("cat <<'EOF' >" + f'tempfile.base64' + "\n")
+            commands.append(base64.b64encode(file.read()) + b'\n')
+            commands.append("EOF\n")
+
+        while resp.is_open():
+            resp.update(timeout=1)
+            if commands:
+                c = commands.pop(0)
+                resp.write_stdin(c)
+            else:
+                break
+
+        resp.close()
+
+        self.exec(f"base64 -d tempfile.base64 > /tmp/tempfile.tar.gz", silent=True, useLegacyShell=True)
+        if not self.check_exists(destination):
+            self.exec(f"mkdir -p {destination}", silent=True, useLegacyShell=True)
+        self.exec(f"tar -xf /tmp/tempfile.tar.gz --directory {destination}", useLegacyShell=True)
+        self.exec(f"rm -f tempfile.base64 tmp/tempfile.tar.gz", silent=True, useLegacyShell=True)
 
     def check_is_file(self, path):
-        return self.exec(f"test -f {path}", silent=True, useLegacyShell=True) == 0
+        return self.exec(f"test -f {path}", silent=True, useLegacyShell=True)["ret_val"] == 0
 
     def check_exists(self, path):
-        return self.exec(f"test -e {path}", silent=True, useLegacyShell=True) == 0
+        return self.exec(f"test -e {path}", silent=True, useLegacyShell=True)["ret_val"] == 0
 
     def check_is_dir(self, path):
-        return self.exec(f"test -d {path}", silent=True, useLegacyShell=True) == 0
-
+        return self.exec(f"test -d {path}", silent=True, useLegacyShell=True)["ret_val"] == 0
 
     def print_pod_details(self):
         resources_details = ""
@@ -205,22 +214,3 @@ class Pod:
                     f"  image: {self.image}\n" +
                     f"  namespace: {self.namespace}\n" +
                     f"{'' if not resources_details else resources_details}")
-
-    def _get_error_code_from_stream_response(self, resp) -> int:
-        """
-        This function returns integer return code from Kubernetes stream 
-        To retrieve Error code from executed command we need to read
-        ERROR_CHANNEL message.
-        * On success it looks like:
-            {"metadata":{},"status":"Success"}
-        * On failure:
-            {"metadata":{},"status":"Failure"
-            "message":"command terminated with non-zero exit code: Error executing in Docker Container: 5",
-            "reason":"NonZeroExitCode","details":{"causes":[{"reason":"ExitCode","message":"5"}]}}
-        """
-        err: str = resp.read_channel(ERROR_CHANNEL)
-        json_err: json = json.loads(err)
-        if json_err["status"] == "Success":
-            return 0
-        else:
-            return int(json_err["details"]["causes"][0]["message"])

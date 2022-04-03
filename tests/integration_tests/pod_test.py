@@ -1,3 +1,4 @@
+from re import I
 import unittest
 import time
 import tempfile
@@ -73,6 +74,74 @@ class PodTests(GenericTest):
                 pod.copy_file_from("/etc/passwd", tmpdirname)
                 self.assertTrue(os.path.exists(f'{tmpdirname}/passwd'), "/etc/passwd file not copied properly from pod.")
                 self.assertTrue(os.path.isfile(f'{tmpdirname}/passwd'), "Copied /etc/passwd file is not a file.")
+
+    def test_exec_pod_correct_return_value(self):
+        """
+        Test to verifyif exec command on pod returns correct return value.
+        """
+        with Pod("busybox") as pod:
+            ret_val = pod.exec("ls /etc/passwd", silent=True, useLegacyShell=True)["ret_val"]
+            self.assertEqual(ret_val, 0, f"Executed command shoud return value 0, but returned {ret_val}")
+
+            ret_val = pod.exec("ls /etc/passwddddddddd", silent=True, useLegacyShell=True)["ret_val"]
+            self.assertNotEqual(ret_val, 0, f"Executed command shoud return value !=0, but returned {ret_val}")
+
+    def test_exec_pod_correct_output(self):
+        """
+        Test to verif yif exec command on pod returns correct output.
+        """
+        with Pod("busybox") as pod:
+            output = pod.exec("cat /etc/hostname", useLegacyShell=True)["output"]
+            self.assertEqual(output, pod.name, f"Executed command output hostname, but outputed {output}")
+
+    def test_exec_pod_correct_output_limited(self):
+        """
+        Test to verify if exec command on pod returns correct limited in character output.
+        """
+        content = "1234567890"
+        with Pod("busybox") as pod:
+            for i in range(1,4):
+                approximate_output_length = i * 10 * len(content)
+                limit = approximate_output_length - 5
+                output = pod.exec(f"for i in $(seq 1 {i*10}); do echo {content}; done", silent=True, useLegacyShell=True, maxOutputCharacters=limit)["output"]
+                self.assertTrue(len(output) <= limit, f"Output limit was set to {limit}, but output had {len(output)} characters.")
+
+    def test_copy_to_pod(self):
+        """
+        Test to verify is coping files and dirs to pod works correctly.
+        """
+        with Pod("busybox") as pod:
+            test_content = "somecontent"
+            test_file_name = "somefile"
+            destination_dir = "/opt"
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                with open(f'{tmpdirname}/{test_file_name}', "wb") as f:
+                    f.write(bytes(test_content, 'utf-8'))
+
+                pod.copy_file_to(f'{tmpdirname}/{test_file_name}', destination_dir)
+                self.assertTrue(pod.check_exists(f"{destination_dir}/{test_file_name}"), "File wasn't created in pod.")
+                self.assertTrue(pod.check_is_file(f"{destination_dir}/{test_file_name}"), "File created in pod is not a file.")
+                pod_file_content = pod.exec(f"cat {destination_dir}/{test_file_name}", silent=True, useLegacyShell=True)["output"]
+                self.assertEqual(pod_file_content, test_content, f"Content of copied file is different.")
+
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                for i in range(2):
+                    with open(f'{tmpdirname}/{test_file_name}.{i}', "wb") as f:
+                        f.write(bytes(f"{test_content}{i}", "utf-8"))
+
+                tmpDirOnlyName = tmpdirname.split("/")[-1]
+
+                pod.copy_file_to(f'{tmpdirname}', destination_dir)
+                self.assertTrue(pod.check_exists(f"{destination_dir}/{tmpDirOnlyName}"), "Dir wasn't created in pod.")
+                self.assertTrue(pod.check_is_dir(f"{destination_dir}/{tmpDirOnlyName}"), "Dir created in pod is not a dir.")
+
+                for i in range(2):
+                    test_file_path = f"{destination_dir}/{tmpDirOnlyName}/{test_file_name}.{i}"
+                    test_file_content = f"{test_content}{i}"
+                    self.assertTrue(pod.check_exists(f"{test_file_path}"), "File wasn't created in pod.")
+                    self.assertTrue(pod.check_is_file(f"{test_file_path}"), "File created in pod is not a file.")
+                    pod_file_content = pod.exec(f"cat {test_file_path}", silent=True, useLegacyShell=True)["output"]
+                    self.assertEqual(pod_file_content, f"{test_file_content}", f"Content of copied file is different.")
 
 if __name__=='__main__':
     unittest.main()

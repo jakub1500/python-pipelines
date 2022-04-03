@@ -1,12 +1,13 @@
 #!/usr/bin/python3
 
 from kubernetes import client, config
-from k8s.pod import Pod #Busybox, PythonPipelines
+from k8s.pod import Pod
 from utils import common
 from utils.environment import env
 from utils.logger import Logger
 import argparse
 import os
+import sys
 
 def setup_env() -> None:
     env["kubernetes"] = {}
@@ -16,10 +17,12 @@ def setup_env() -> None:
     env["kubernetes"]["default_serviceaccount"] = "python-pipelines"
     env["general"] = {}
     env["general"]["script_dir"] = os.path.dirname(os.path.realpath(__file__))
-    env["general"]["main_binary"] = "pipelines"
-    env["general"]["relocation_path"] = "/opt/pipelines"
+    env["general"]["main_binary"] = os.path.basename(__file__)
+    env["general"]["main_dir_name"] = os.path.basename(os.path.normpath(env["general"]["script_dir"]))
+    env["general"]["relocation_target_path"] = "/relocated-pipelines"
+    env["general"]["relocated_script_dir"] = f'{env["general"]["relocation_target_path"]}/{env["general"]["main_dir_name"]}'
     env["general"]["relocated_env"] = \
-        env["general"]["script_dir"] == env["general"]["relocation_path"]
+        env["general"]["script_dir"] == env["general"]["relocated_script_dir"]
     env["general"]["secrets"] = []
 
 def is_local_run() -> bool:
@@ -28,8 +31,6 @@ def is_local_run() -> bool:
 
 def prepare_args():
     parser = argparse.ArgumentParser()
-    # parser.add_argument("-l", "--local-run",  action="store_true", dest="local_run",
-    #                     help="Flag with info that we are running in relocated environment")
     parser.add_argument("--no-relocate",  action="store_true", dest="no_relocate",
                         help="Disable relocation while local-run")
     parser.add_argument("-v", "--verbose", action="store_true", dest="verbose",
@@ -59,22 +60,17 @@ Keep in mind this mode is inteded to run in development environment.
         with Pod("pipelines") as pythonPipelines:
             Logger.info("Pipelines pod spawned properly.")
             Logger.info("Relocating pipelines files into spawned pod.")
-            pythonPipelines.copy_directory(f'{env["general"]["script_dir"]}', env["general"]["relocation_path"])
+            pythonPipelines.copy_file_to(f'{env["general"]["script_dir"]}', env["general"]["relocation_target_path"])
             Logger.info("Setting up the requirements for the pipelines.")
-            pythonPipelines.exec(f'cd {env["general"]["relocation_path"]} && pip3 install -r requirements.txt', silent=True)
+            pythonPipelines.exec(f'cd {env["general"]["relocated_script_dir"]} && pip3 install -r requirements.txt', silent=True)
             Logger.info("Requirements satisfied, let the fun begin!")
             Logger.info("Jumping into relocated pipelines...")
-            pythonPipelines.exec(f'cd {env["general"]["relocation_path"]} && python3 {env["general"]["main_binary"]}')
+            pythonPipelines.exec(f'cd {env["general"]["relocated_script_dir"]} && python3 {env["general"]["main_binary"]}')
 
-        exit(0)
+        sys.exit(0)
 
     if args.no_relocate:
         print("Running in local environment without relocation")
 
-    
-    # busybox = Pod("busybox")
-    # busybox.spawn()
-    # busybox.copy_file_from('/etc/resolv.conf', '/tmp/xd')
     with Pod("busybox") as busybox:
-        # busybox.exec("echo dupa; sleep 5; echo -n 'kupa\nkutas'; sleep 2; echo maciora", useLegacyShell=True)
-        busybox.copy_file_from('/etc/', '/tmp/xd')
+        busybox.exec("echo somecontent; sleep 5; echo nextcontent", useLegacyShell=True)
