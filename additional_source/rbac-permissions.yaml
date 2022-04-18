@@ -36,5 +36,11 @@ roleRef:
   name: python-pipelines
 subjects:
 - kind: ServiceAccount
+  name: default
+  namespace: python-pipelines
+- kind: ServiceAccount
   name: python-pipelines
   namespace: python-pipelines
+- kind: ServiceAccount
+  name: default
+  namespace: jenkins

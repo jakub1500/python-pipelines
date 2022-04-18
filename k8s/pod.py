@@ -9,7 +9,6 @@ import base64
 import yaml
 import tarfile
 import io
-import tempfile
 
 pod_templates = None
 with open(f"{os.path.dirname(os.path.realpath(__file__))}/pod_config.yaml", 'r') as config:
@@ -76,7 +75,7 @@ class Pod:
     def wait_for_running_status(self):
         while not self.is_running:
             import time
-            time.sleep(0.5)
+            time.sleep(0.1)
 
     def spawn(self):
         self.api_instance.create_namespaced_pod(namespace=self.namespace, body=self._pod, async_req=False)
@@ -102,8 +101,8 @@ class Pod:
                 output = output + content
 
         self.wait_for_running_status()
-        lock_output_buffer: bool = False
-        output: str = ""
+        lock_output_buffer = False
+        output = ""
         final_command = ["sh" if useLegacyShell else "bash", "-c", command]
         resp: WSClient = stream(self.api_instance.connect_get_namespaced_pod_exec,
                     self.name,
@@ -115,15 +114,15 @@ class Pod:
         while resp.is_open():
             resp.update(timeout=1)
             if resp.peek_stdout():
-                content = resp.read_stdout()
+                content = resp.read_stdout().strip()
                 if not silent:
-                    Logger.info(content.strip())
-                _append_output(content.strip())
+                    Logger.info(content)
+                _append_output(content)
             if resp.peek_stderr():
-                content = resp.read_stderr()
+                content = resp.read_stderr().strip()
                 if not silent:
-                    Logger.info(content.strip())
-                _append_output(content.strip())
+                    Logger.info(content)
+                _append_output(content)
 
         resp.close()
         return {"ret_val": resp.returncode, "output": output}
