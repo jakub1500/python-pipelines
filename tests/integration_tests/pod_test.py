@@ -108,7 +108,7 @@ class PodTests(GenericTest):
 
     def test_copy_to_pod(self):
         """
-        Test to verify is coping files and dirs to pod works correctly.
+        Test to verify if coping files and dirs to pod works correctly.
         """
         with Pod("busybox") as pod:
             test_content = "somecontent"
@@ -142,6 +142,57 @@ class PodTests(GenericTest):
                     self.assertTrue(pod.check_is_file(f"{test_file_path}"), "File created in pod is not a file.")
                     pod_file_content = pod.exec(f"cat {test_file_path}", silent=True, useLegacyShell=True)["output"]
                     self.assertEqual(pod_file_content, f"{test_file_content}", f"Content of copied file is different.")
+
+    def test_archive_artifact_files(self):
+        """
+        Test to verify if archiving of files artifacts works correctly.
+        """
+        test_content = "marchewka"
+        test_file_name = "kalafior"
+        test_file_dir = "/tmp"
+        test_file_path = os.path.join(test_file_dir, test_file_name)
+
+        for i in range(2):
+            with Pod("busybox") as pod:
+                pod.exec(f"echo -n {test_content}{i} > {test_file_path}{i}", silent=True, useLegacyShell=True)
+                pod.archive_artifact(f"{test_file_path}{i}")
+        
+        for i in range(2):
+            final_artifact_path = os.path.join(env["general"]["artifacts_path"], f"{test_file_name}{i}")
+            self.assertTrue(os.path.exists(final_artifact_path), "Artifact wasn't created.")
+            self.assertTrue(os.path.isfile(final_artifact_path), "Archived artifacts is not a file")
+            with open(final_artifact_path, "r") as f:
+                read_content = f.read()
+                self.assertEqual(f"{test_content}{i}", read_content, "Test content differs from the read one.")
+
+    def test_archive_artifact_dirs(self):
+        """
+        Test to verify if archiving of dirs artifacts works correctly.
+        """
+        test_content = "marchewka"
+        test_file_name = "kalafior"
+        test_dir_generic = "brokul"
+        test_file_path_generic = os.path.join("/tmp", test_dir_generic)
+
+        for i in range(2):
+            with Pod("busybox") as pod:
+                test_dir_path = f"{test_file_path_generic}{i}"
+                test_file_path = os.path.join(test_dir_path, test_file_name)
+                pod.exec(f"mkdir -p {test_dir_path}", silent=True, useLegacyShell=True)
+                pod.exec(f"echo -n {test_content} > {test_file_path}", silent=True, useLegacyShell=True)
+                pod.archive_artifact(f"{test_dir_path}")
+        
+        for i in range(2):
+            test_dir_path = f"{test_file_path_generic}{i}"
+            test_file_path = os.path.join(test_dir_path, test_file_name)
+            final_artifact_path = os.path.join(env["general"]["artifacts_path"], f"{test_dir_generic}{i}")
+            final_artifact_inside_dir_path = os.path.join(final_artifact_path, test_file_name)
+            self.assertTrue(os.path.exists(final_artifact_path), "Artifact wasn't created")
+            self.assertTrue(os.path.isdir(final_artifact_path), "Archived artifact is not a dir")
+            self.assertTrue(os.path.isfile(final_artifact_inside_dir_path), "Archived artifact insidr dir is not a file")
+            with open(final_artifact_inside_dir_path, "r") as f:
+                read_content = f.read()
+                self.assertEqual(f"{test_content}", read_content, "Test content differs from the read one.")
 
 if __name__=='__main__':
     unittest.main()

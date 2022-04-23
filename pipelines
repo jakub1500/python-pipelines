@@ -8,6 +8,7 @@ from utils.logger import Logger
 import argparse
 import os
 import sys
+import shutil
 
 def setup_env() -> None:
     env["kubernetes"] = {}
@@ -19,6 +20,8 @@ def setup_env() -> None:
     env["general"]["script_dir"] = os.path.dirname(os.path.realpath(__file__))
     env["general"]["main_binary"] = os.path.basename(__file__)
     env["general"]["main_dir_name"] = os.path.basename(os.path.normpath(env["general"]["script_dir"]))
+    env["general"]["artifacts_dir_name"] = ".artifacts"
+    env["general"]["artifacts_path"] = os.path.join(env["general"]["script_dir"], env["general"]["artifacts_dir_name"])
     env["general"]["relocation_target_path"] = "/relocated-pipelines"
     env["general"]["relocated_script_dir"] = f'{env["general"]["relocation_target_path"]}/{env["general"]["main_dir_name"]}'
     env["general"]["relocated_env"] = \
@@ -67,9 +70,18 @@ Keep in mind this mode is inteded to run in development environment.
             Logger.info("Jumping into relocated pipelines...")
             pythonPipelines.exec(f'cd {env["general"]["relocated_script_dir"]} && python3 {env["general"]["main_binary"]}')
 
+            # check if any artifacts were created inside relocated pipelines
+            relocated_artifacts_path = os.path.join(env["general"]["relocated_script_dir"], env["general"]["artifacts_dir_name"])
+            if pythonPipelines.check_is_dir(relocated_artifacts_path):
+                if os.path.exists(env["general"]["artifacts_path"]):
+                    shutil.rmtree(env["general"]["artifacts_path"])
+                os.mkdir(env["general"]["artifacts_path"])
+                pythonPipelines.copy_file_from(relocated_artifacts_path, env["general"]["script_dir"])
         sys.exit(0)
 
     if args.no_relocate:
+        if os.path.exists(env["general"]["artifacts_path"]):
+            shutil.rmtree(env["general"]["artifacts_path"])
         print("Running in local environment without relocation")
 
     if os.getenv("JENKINS_HOME") is not None:
@@ -85,13 +97,16 @@ Keep in mind this mode is inteded to run in development environment.
                 params[key] = value
         print(params, flush=True)
 
-    # with Pod("busybox") as busybox:
-    #     busybox.exec("echo somecontent; sleep 5; echo nextcontent", useLegacyShell=True)
+    # with Pod("ubuntu2204") as ubuntu:
+    #     ubuntu.exec("apt update && apt install -y build-essential wget", silent=True)
+    #     ubuntu.exec("wget https://ftp.gnu.org/gnu/bash/bash-5.1.8.tar.gz && tar -xf bash-5.1.8.tar.gz", silent=True)
+    #     ubuntu.exec("cd bash-5.1.8 && ./configure && make")
+    #     output = ubuntu.exec("bash-5.1.8/bash --version")["output"]
+    #     correct_version = True if "GNU bash, version 5.1.8" in output else False
+    #     print(f"Built correct version? {correct_version}")
+    #     sys.exit(0 if correct_version else 1)
     with Pod("ubuntu2204") as ubuntu:
-        ubuntu.exec("apt update && apt install -y build-essential wget", silent=True)
-        ubuntu.exec("wget https://ftp.gnu.org/gnu/bash/bash-5.1.8.tar.gz && tar -xf bash-5.1.8.tar.gz", silent=True)
-        ubuntu.exec("cd bash-5.1.8 && ./configure && make")
-        output = ubuntu.exec("bash-5.1.8/bash --version")["output"]
-        correct_version = True if "GNU bash, version 5.1.8" in output else False
-        print(f"Built correct version? {correct_version}")
-        sys.exit(0 if correct_version else 1)
+        ubuntu.exec("mkdir -p andrzej")
+        ubuntu.exec("mkdir -p andrzej1")
+        ubuntu.exec("echo koniczyna > andrzej/dupk11a", silent=True)
+        ubuntu.exec("echo koniczyna > andrzej1/dupk11a", silent=True)

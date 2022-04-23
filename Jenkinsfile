@@ -16,6 +16,9 @@ podTemplate(containers: [
                 sh("echo ${key}=${value} >> params.txt")
             }
             sh("python3 pipelines")
+            if (fileExists('.artifacts')) {
+                archiveArtifacts(artifacts: '.artifacts/**')
+            }
         }
       }
 }

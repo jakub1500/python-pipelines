@@ -182,6 +182,23 @@ class Pod:
         self.exec(f"base64 -d {temp_file} | tar zxf - --directory {destination}", silent=True, useLegacyShell=True)
         self.exec(f"rm -f {temp_file}", silent=True, useLegacyShell=True)
 
+    def archive_artifact(self, path) -> None:
+        """
+        This method is responsible for copying pointed artifact to configured artifacts directory
+        inside of main pipelines pod. Path given as argument will accept files and dirs. In case if
+        path to dir is passed, whole dir will be archived. It is worth to note that if artifact of
+        same name has been already archived it will be overrided.
+        """
+        artifacts_dir_path: str = env["general"]["artifacts_path"]
+        artifact_name: str = os.path.basename(os.path.normpath(path))
+
+        if not self.check_exists(path):
+            pass
+        if not os.path.exists(artifacts_dir_path):
+            os.mkdir(artifacts_dir_path)
+
+        self.copy_file_from(path, artifacts_dir_path)
+
     def print_pod_details(self) -> None:
         resources_details = ""
         if self.resources:
@@ -197,13 +214,13 @@ class Pod:
                     f"  namespace: {self.namespace}\n" +
                     f"{'' if not resources_details else resources_details}")
 
-    def check_is_file(self, path: str) -> None:
+    def check_is_file(self, path: str) -> bool:
         return self.exec(f"test -f {path}", silent=True, useLegacyShell=True)["ret_val"] == 0
 
-    def check_exists(self, path: str) -> None:
+    def check_exists(self, path: str) -> bool:
         return self.exec(f"test -e {path}", silent=True, useLegacyShell=True)["ret_val"] == 0
 
-    def check_is_dir(self, path: str) -> None:
+    def check_is_dir(self, path: str) -> bool:
         return self.exec(f"test -d {path}", silent=True, useLegacyShell=True)["ret_val"] == 0
 
     def create_temp_file(self) -> str:

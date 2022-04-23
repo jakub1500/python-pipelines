@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+import shutil
 from utils.environment import env
 from kubernetes import client, config
 
@@ -17,12 +19,13 @@ class GenericTest(unittest.TestCase):
         env["general"] = {}
         env["general"]["relocated_env"] = False
         env["general"]["secrets"] = []
+        env["general"]["artifacts_dir_name"] = ".artifacts"
+        env["general"]["artifacts_path"] = tempfile.mkdtemp()
         cls.kubernetes_api: client.CoreV1Api = env["kubernetes"]["api"]
         cls.namespace = env["kubernetes"]["default_namespace"]
     
     @classmethod
     def tearDownClass(cls):
         print("Clearing the environmet")
+        shutil.rmtree(env["general"]["artifacts_path"])
         env.clear()
-
-
