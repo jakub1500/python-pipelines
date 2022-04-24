@@ -97,16 +97,11 @@ Keep in mind this mode is inteded to run in development environment.
                 params[key] = value
         print(params, flush=True)
 
-    # with Pod("ubuntu2204") as ubuntu:
-    #     ubuntu.exec("apt update && apt install -y build-essential wget", silent=True)
-    #     ubuntu.exec("wget https://ftp.gnu.org/gnu/bash/bash-5.1.8.tar.gz && tar -xf bash-5.1.8.tar.gz", silent=True)
-    #     ubuntu.exec("cd bash-5.1.8 && ./configure && make")
-    #     output = ubuntu.exec("bash-5.1.8/bash --version")["output"]
-    #     correct_version = True if "GNU bash, version 5.1.8" in output else False
-    #     print(f"Built correct version? {correct_version}")
-    #     sys.exit(0 if correct_version else 1)
     with Pod("ubuntu2204") as ubuntu:
-        ubuntu.exec("mkdir -p andrzej")
-        ubuntu.exec("mkdir -p andrzej1")
-        ubuntu.exec("echo koniczyna > andrzej/dupk11a", silent=True)
-        ubuntu.exec("echo koniczyna > andrzej1/dupk11a", silent=True)
+        ubuntu.exec("apt update && apt install -y build-essential wget", silent=True)
+        ubuntu.exec("wget https://ftp.gnu.org/gnu/bash/bash-5.1.8.tar.gz && tar -xf bash-5.1.8.tar.gz", silent=True)
+        ubuntu.exec("cd bash-5.1.8 && ./configure && make")
+        output = ubuntu.exec("bash-5.1.8/bash --version")["output"]
+        correct_version = True if "GNU bash, version 5.1.8" in output else False
+        print(f"Built correct version? {correct_version}")
+        sys.exit(0 if correct_version else 1)

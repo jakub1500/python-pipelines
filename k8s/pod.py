@@ -1,7 +1,7 @@
 from kubernetes import client
 from kubernetes.stream import stream
 from kubernetes.stream.ws_client import WSClient
-from utils.common import generate_random_string
+from utils.common import generate_random_string, PipelinesException
 from utils.logger import Logger
 from utils.environment import env
 import os
@@ -190,10 +190,10 @@ class Pod:
         same name has been already archived it will be overrided.
         """
         artifacts_dir_path: str = env["general"]["artifacts_path"]
-        artifact_name: str = os.path.basename(os.path.normpath(path))
 
         if not self.check_exists(path):
-            pass
+            raise ArtifactNotExistsException(
+                f"Attempted to create an artifact from {path} in {self.name} ({self.image}) which doesn't exist")
         if not os.path.exists(artifacts_dir_path):
             os.mkdir(artifacts_dir_path)
 
@@ -225,3 +225,11 @@ class Pod:
 
     def create_temp_file(self) -> str:
         return self.exec("mktemp", silent=True, useLegacyShell=True)["output"]
+
+
+class PodException(PipelinesException):
+    pass
+
+
+class ArtifactNotExistsException(PodException):
+    pass

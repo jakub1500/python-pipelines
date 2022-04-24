@@ -194,5 +194,19 @@ class PodTests(GenericTest):
                 read_content = f.read()
                 self.assertEqual(f"{test_content}", read_content, "Test content differs from the read one.")
 
+    def test_archive_artifact_not_existing_file(self):
+        """
+        Test to verify if archiving of files artifacts throws exception when artifact path doesn't exist.
+        """
+        from k8s.pod import ArtifactNotExistsException
+        test_file_name = "kalafior"
+        test_file_dir = "/tmp"
+        test_file_path = os.path.join(test_file_dir, test_file_name)
+
+        with Pod("busybox") as pod:
+            with self.assertRaises(ArtifactNotExistsException):
+                pod.archive_artifact(f"{test_file_path}")
+
+
 if __name__=='__main__':
     unittest.main()
