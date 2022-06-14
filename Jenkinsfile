@@ -1,3 +1,5 @@
+import groovy.json.JsonOutput 
+
 podTemplate(containers: [
     containerTemplate(name: 'python-pipelines', image: 'python:3.9.12', ttyEnabled: true, command: 'cat')
   ]) {
@@ -11,11 +13,15 @@ podTemplate(containers: [
                 submoduleCfg: [],
                 userRemoteConfigs: [[url: 'https://github.com/jakub1500/python-pipelines.git']]])
             sh("pip3 install -r requirements.txt")
-            params.each{ key, value ->
-                echo("${key}=${value}")
-                sh("echo ${key}=${value} >> params.txt")
+
+            String params_string = ''
+            if (!params.isEmpty()) {
+                String params_json_string = JsonOutput.toJson(params).replace("\"", "\\\"")
+                params_string = "-p \"${params_json_string}\""
             }
-            sh("python3 pipelines")
+
+            echo(params_string)
+            sh("python3 pipelines -j ${JOB_NAME} ${params_string}")
             if (fileExists('.artifacts')) {
                 archiveArtifacts(artifacts: '.artifacts/**')
             }

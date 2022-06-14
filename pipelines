@@ -9,6 +9,7 @@ import argparse
 import os
 import sys
 import shutil
+import json
 
 def setup_env() -> None:
     env["kubernetes"] = {}
@@ -36,9 +37,25 @@ def prepare_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-relocate",  action="store_true", dest="no_relocate",
                         help="Disable relocation while local-run")
+    parser.add_argument("-p", "--parameters", dest="parameters",
+                        help="Parameters to be passed for specified job")
+    parser.add_argument("-j", "--job-name", dest="job_name", required=True,
+                        help="Job selected for execution")
     parser.add_argument("-v", "--verbose", action="store_true", dest="verbose",
                         help="increase output verbosity")
     return parser.parse_args()
+
+def prepare_job_parameters(input_params):
+    parameters = {}
+    if input_params is None:
+        return parameters
+    try:
+        parameters = json.loads(input_params)
+    except json.decoder.JSONDecodeError as e:
+        Logger.error(f"Provided parameters are not in JSON format.\n{input_params}\n{e}")
+        sys.exit(1)
+    return parameters
+
 
 
 if __name__ == "__main__":
@@ -52,6 +69,9 @@ if __name__ == "__main__":
         config.load_incluster_config()
 
     setup_env()  # setup env must happen after proper config load
+
+    job_parameters = prepare_job_parameters(args.parameters)
+    job_name = args.job_name
 
     if is_local_run() and not args.no_relocate:
         print("""
@@ -68,7 +88,8 @@ Keep in mind this mode is inteded to run in development environment.
             pythonPipelines.exec(f'cd {env["general"]["relocated_script_dir"]} && pip3 install -r requirements.txt', silent=True)
             Logger.info("Requirements satisfied, let the fun begin!")
             Logger.info("Jumping into relocated pipelines...")
-            pythonPipelines.exec(f'cd {env["general"]["relocated_script_dir"]} && python3 {env["general"]["main_binary"]}')
+            json_string_params = json.dumps(job_parameters).replace("\"", "\\\"")
+            pythonPipelines.exec(f'cd {env["general"]["relocated_script_dir"]} && python3 {env["general"]["main_binary"]} -j {job_name} -p "{json_string_params}"')
 
             # check if any artifacts were created inside relocated pipelines
             relocated_artifacts_path = os.path.join(env["general"]["relocated_script_dir"], env["general"]["artifacts_dir_name"])
@@ -88,20 +109,8 @@ Keep in mind this mode is inteded to run in development environment.
         print("Running in Jenkins environment, some env variables:")
         for var in ["POD_LABEL", "BUILD_URL", "WORKSPACE", "JENKINS_URL", "BUILD_NUMBER", "PYTHON_VERSION", "JOB_NAME"]:
             print(f"{var}: {os.getenv(var)}", flush=True)
-        params = {}
-        print("Params:", flush=True)
-        with open("params.txt", "r") as f_params:
-            for line in f_params.readlines():
-                key = line.split("=", 1)[0].strip()
-                value = line.split("=", 1)[1].strip()
-                params[key] = value
-        print(params, flush=True)
 
-    with Pod("ubuntu2204") as ubuntu:
-        ubuntu.exec("apt update && apt install -y build-essential wget", silent=True)
-        ubuntu.exec("wget https://ftp.gnu.org/gnu/bash/bash-5.1.8.tar.gz && tar -xf bash-5.1.8.tar.gz", silent=True)
-        ubuntu.exec("cd bash-5.1.8 && ./configure && make")
-        output = ubuntu.exec("bash-5.1.8/bash --version")["output"]
-        correct_version = True if "GNU bash, version 5.1.8" in output else False
-        print(f"Built correct version? {correct_version}")
-        sys.exit(0 if correct_version else 1)
+    from jobs import select_job
+    job = select_job(job_name, job_parameters)
+    Logger.info(f"Running job '{job_name}' with parameters '{job_parameters}'")
+    job.run()
